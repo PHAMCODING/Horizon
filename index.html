@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Horizon — Offline AI Assistant</title>
+    <meta name="description" content="A fully offline AI chatbot that runs directly in your browser using WebGPU. No server, no cloud, complete privacy.">
+    <meta name="theme-color" content="#0a0a0f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.json">
+    <link rel="shortcut icon" href="icon-512.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+    <link rel="apple-touch-icon" href="icon-512.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="index.css">
+    <script>
+    // One-time cache buster: clears old service workers and cached files
+    (async function() {
+        const BUST_KEY = "horizon-cache-busted-v4";
+        if (!localStorage.getItem(BUST_KEY)) {
+            // Unregister all service workers
+            if ("serviceWorker" in navigator) {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                for (const r of regs) { await r.unregister(); }
+            }
+            // Clear all caches
+            if ("caches" in window) {
+                const names = await caches.keys();
+                for (const n of names) { await caches.delete(n); }
+            }
+            localStorage.setItem(BUST_KEY, "1");
+            // Reload to get fresh files
+            location.reload(true);
+        }
+    })();
+    </script>
+</head>
+<body>
+    <!-- Ambient background effects -->
+    <div class="ambient-bg">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <div id="app">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <img src="icon-512.png" alt="Horizon Logo" style="width: 100%; height: 100%; object-fit: cover; border-radius: inherit;">
+                    </div>
+                    <span class="logo-text">Horizon</span>
+                </div>
+                <button id="new-chat-btn" class="btn-new-chat" title="New Chat">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="sidebar-chats" id="chat-list">
+                <!-- Chat history items will be inserted here -->
+            </div>
+            <div class="sidebar-footer">
+                <button id="update-btn" class="btn-install">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"></path>
+                        <path d="M1 20v-6h6"></path>
+                        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"></path>
+                    </svg>
+                    Update App
+                </button>
+                <button id="install-btn" class="btn-install hidden">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Install as App
+                </button>
+                <div class="status-badge" id="status-badge">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Offline Ready</span>
+                </div>
+                <div class="model-info">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
+                    </svg>
+                    <span id="model-name-display">SmolLM2 360M</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main content -->
+        <main class="main-content">
+            <!-- Top bar -->
+            <header class="top-bar">
+                <button id="sidebar-toggle" class="btn-icon" title="Toggle Sidebar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+                <div class="top-bar-title">
+                    <h1 id="chat-title">New Chat</h1>
+                    <span class="privacy-badge">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0110 0v4"></path>
+                        </svg>
+                        100% Private
+                    </span>
+                </div>
+                <button id="knowledge-btn" class="btn-icon" title="Wikipedia Knowledge Base">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 19.5A2.5 2.5 0 016.5 17H20"></path>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"></path>
+                    </svg>
+                    <span class="kb-badge hidden" id="kb-badge">0</span>
+                </button>
+                <button id="settings-btn" class="btn-icon" title="Settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"></path>
+                    </svg>
+                </button>
+            </header>
+
+            <!-- Chat area -->
+            <div class="chat-area" id="chat-area">
+                <!-- Welcome screen -->
+                <div class="welcome-screen" id="welcome-screen">
+                    <div class="welcome-glow"></div>
+                    <div class="welcome-icon">
+                        <img src="icon-512.png" alt="NeuralBox Logo" style="width: 100%; height: 100%; object-fit: cover; border-radius: inherit;">
+                    </div>
+                    <h2>Welcome to Horizon</h2>
+                    <p>A fully private AI that runs entirely in your browser.<br>No servers. No cloud. No data leaves your device.</p>
+                    
+                    <div class="welcome-cards">
+                        <button class="welcome-card" data-prompt="Explain quantum computing in simple terms">
+                            <div class="card-icon">🧠</div>
+                            <span>Explain quantum computing</span>
+                        </button>
+                        <button class="welcome-card" data-prompt="Write a short poem about the ocean at night">
+                            <div class="card-icon">✨</div>
+                            <span>Write a poem</span>
+                        </button>
+                        <button class="welcome-card" data-prompt="What are 5 tips for better productivity?">
+                            <div class="card-icon">🚀</div>
+                            <span>Productivity tips</span>
+                        </button>
+                        <button class="welcome-card" data-prompt="Help me brainstorm a creative startup idea">
+                            <div class="card-icon">💡</div>
+                            <span>Brainstorm ideas</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Messages container -->
+                <div class="messages-container" id="messages-container">
+                    <!-- Messages will be inserted here -->
+                </div>
+            </div>
+
+            <!-- Loading overlay -->
+            <div class="loading-overlay" id="loading-overlay">
+                <div class="loading-card">
+                    <div class="loading-spinner">
+                        <div class="spinner-ring"></div>
+                        <div class="spinner-core"></div>
+                    </div>
+                    <h3 id="loading-title">Initializing AI Model</h3>
+                    <p id="loading-subtitle">Downloading and preparing the model for offline use...</p>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progress-bar"></div>
+                    </div>
+                    <span class="progress-text" id="progress-text">0%</span>
+                </div>
+            </div>
+
+            <!-- Input area -->
+            <div class="input-area">
+                <div id="file-preview" class="file-preview hidden"></div>
+                <div class="input-container">
+                    <input type="file" id="file-input" class="hidden" accept="image/*,.txt,.md,.csv,.json,.js,.py,.html,.css,.xml,.log,.yaml,.yml,.ini,.cfg,.toml,.sql,.sh,.bat,.c,.cpp,.h,.java,.ts,.tsx,.jsx,.rb,.go,.rs,.php,.swift,.kt" multiple>
+                    <button id="file-upload-btn" class="btn-upload" title="Upload Files">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"></path>
+                        </svg>
+                    </button>
+                    <textarea 
+                        id="message-input" 
+                        placeholder="Message Horizon..." 
+                        rows="1"
+                        disabled
+                    ></textarea>
+                    <button id="send-btn" class="btn-send" disabled title="Send Message">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                    <button id="stop-btn" class="btn-stop hidden" title="Stop Generation">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                        </svg>
+                    </button>
+                </div>
+                <p class="input-disclaimer">Horizon runs 100% locally in your browser. Your conversations never leave your device.</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay hidden" id="settings-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="close-settings" class="btn-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label class="setting-label">AI Model</label>
+                    <p class="setting-description">Choose the model to run locally. Larger models are smarter but require more VRAM.</p>
+                    <select id="model-select" class="setting-select">
+                        <option value="SmolLM2-135M-Instruct-q0f16-MLC">Mercury (135M) — Light & Blazing Fast</option>
+                        <option value="SmolLM2-360M-Instruct-q4f16_1-MLC">Venus (360M) — Fast (~250MB)</option>
+                        <option value="Llama-3.2-1B-Instruct-q4f16_1-MLC">Earth (1B) — Fast (~700MB)</option>
+                        <option value="Qwen2.5-1.5B-Instruct-q4f16_1-MLC">Mars (1.5B) — Balanced (~1GB)</option>
+                        <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">Jupiter (3B) — Smartest (~1.8GB)</option>
+                        <option value="Llama-3.2-11B-Vision-Instruct-q4f16_1-MLC">Saturn (11B Vision) — Image Support (~7GB)</option>
+                    </select>
+                </div>
+                <div class="setting-group">
+                    <label class="setting-label">App Theme</label>
+                    <p class="setting-description">Choose the visual aesthetic for Horizon.</p>
+                    <select id="theme-select" class="setting-select">
+                        <option value="obsidian">Obsidian (Default Dark)</option>
+                        <option value="cyberpunk">Cyberpunk (Neon Pink/Blue)</option>
+                        <option value="aurora">Aurora (Emerald/Teal)</option>
+                        <option value="crimson">Crimson (Red/Orange)</option>
+                        <option value="light">Light Mode</option>
+                    </select>
+                </div>
+                <div class="setting-group">
+                    <label class="setting-label">System Prompt</label>
+                    <p class="setting-description">Customize the AI's personality and behavior.</p>
+                    <textarea id="system-prompt" class="setting-textarea" rows="4">You are a free thinking, brilliant AI assistant with deep reasoning capabilities. You are encouraged to explore ideas creatively. However, you must be strictly grounded in facts and never hallucinate or invent information. If you do not know a fact, state it clearly. You are restricted to English and Farsi only; do not use any other languages. Use clear, varied sentence structures and perfect spelling. Do not use hyphens in your responses.</textarea>
+                </div>
+                <div class="setting-group">
+                    <label class="setting-label">Temperature: <span id="temp-value">0.7</span></label>
+                    <p class="setting-description">Higher values make responses more creative, lower values more focused.</p>
+                    <input type="range" id="temperature" class="setting-range" min="0" max="1.5" step="0.1" value="0.7">
+                </div>
+                <div class="setting-group">
+                    <label class="setting-label">Max Tokens</label>
+                    <p class="setting-description">Maximum length of the AI's response.</p>
+                    <input type="number" id="max-tokens" class="setting-input" value="1024" min="64" max="4096" step="64">
+                </div>
+                <div class="setting-actions">
+                    <button id="apply-settings" class="btn-primary">Apply & Reload Model</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Knowledge Base Modal -->
+    <div class="modal-overlay hidden" id="knowledge-modal">
+        <div class="modal modal-wide">
+            <div class="modal-header">
+                <h2>📚 Wikipedia Knowledge Base</h2>
+                <button id="close-knowledge" class="btn-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="kb-description">Download Wikipedia articles so the AI can reference them when answering your questions — even offline.</p>
+
+                <!-- Search Wikipedia -->
+                <div class="kb-search-section">
+                    <div class="kb-search-bar">
+                        <input type="text" id="kb-search-input" class="setting-input" placeholder="Search Wikipedia articles...">
+                        <button id="kb-search-btn" class="btn-primary btn-sm">Search</button>
+                    </div>
+                    <div id="kb-search-results" class="kb-results"></div>
+                </div>
+
+                <!-- Bulk Download -->
+                <div class="kb-bulk-section">
+                    <div class="kb-bulk-header">
+                        <h3>Quick Download</h3>
+                        <p class="setting-description">Download 75 essential Wikipedia articles covering science, technology, history, geography, and more.</p>
+                    </div>
+                    <button id="kb-bulk-download" class="btn-primary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Download 75 Essential Articles
+                    </button>
+                    <div id="kb-bulk-progress" class="kb-progress hidden">
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="kb-progress-bar"></div>
+                        </div>
+                        <span class="progress-text" id="kb-progress-text">0 / 75</span>
+                    </div>
+                </div>
+
+                <!-- Deep Archive Crawler -->
+                <div class="kb-bulk-section" style="border-top: 1px solid var(--surface-glass-border); padding-top: 20px;">
+                    <div class="kb-bulk-header">
+                        <h3>Automated Knowledge Crawler</h3>
+                        <p class="setting-description">Continuously downloads random Wikipedia articles into your offline database until you stop it or storage is full. Warning: Takes hours to run.</p>
+                    </div>
+                    <button id="kb-crawler-btn" class="btn-primary" style="background: var(--status-error);">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                        </svg>
+                        Start Deep Archive Crawler
+                    </button>
+                    <div id="kb-crawler-progress" class="kb-progress hidden">
+                        <span class="progress-text" id="kb-crawler-text">Downloaded: 0 articles...</span>
+                    </div>
+                </div>
+
+                <!-- Downloaded Articles -->
+                <div class="kb-library-section">
+                    <div class="kb-library-header">
+                        <h3>Downloaded Articles <span id="kb-count-label" class="kb-count">0</span></h3>
+                        <button id="kb-clear-all" class="btn-danger-sm">Clear All</button>
+                    </div>
+                    <div id="kb-article-list" class="kb-article-list">
+                        <p class="kb-empty">No articles downloaded yet. Search or use Quick Download above.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+    <script>
+        // Register Service Worker for offline support
+        if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.register("/sw.js").then(function(reg) {
+                console.log("Service Worker registered", reg.scope);
+            }).catch(function(err) {
+                console.warn("SW registration failed:", err);
+            });
+        }
+
+        // PWA Install Prompt
+        let deferredPrompt = null;
+        const installBtn = document.getElementById("install-btn");
+
+        window.addEventListener("beforeinstallprompt", function(e) {
+            e.preventDefault();
+            deferredPrompt = e;
+            installBtn.classList.remove("hidden");
+        });
+
+        installBtn.addEventListener("click", async function() {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            const result = await deferredPrompt.userChoice;
+            if (result.outcome === "accepted") {
+                installBtn.classList.add("hidden");
+            }
+            deferredPrompt = null;
+        });
+
+        window.addEventListener("appinstalled", function() {
+            installBtn.classList.add("hidden");
+            deferredPrompt = null;
+        });
+    </script>
+</body>
+</html>
