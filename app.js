@@ -255,12 +255,56 @@ function getCurrentChat() {
     return state.chats[state.currentChatId];
 }
 
-// Auto-generate title from latest user message
+// Auto-generate a basic title immediately
 function autoTitle(chat) {
     const userMessages = chat.messages.filter((m) => m.role === "user");
     const latestUserMsg = userMessages[userMessages.length - 1];
     if (latestUserMsg) {
-        chat.title = latestUserMsg.content.slice(0, 40) + (latestUserMsg.content.length > 40 ? "..." : "");
+        let textContent = latestUserMsg.content;
+        if (Array.isArray(textContent)) {
+            const textPart = textContent.find(p => p.type === "text");
+            textContent = textPart ? textPart.text : "Image prompt";
+        }
+        chat.title = textContent.slice(0, 40) + (textContent.length > 40 ? "..." : "");
+    }
+}
+
+// Generate a custom title using the LLM
+async function generateAI_Title(chat) {
+    const userMessages = chat.messages.filter((m) => m.role === "user");
+    const latestUserMsg = userMessages[userMessages.length - 1];
+    
+    if (latestUserMsg && state.engine) {
+        let textContent = latestUserMsg.content;
+        if (Array.isArray(textContent)) {
+            const textPart = textContent.find(p => p.type === "text");
+            textContent = textPart ? textPart.text : "";
+        }
+        
+        if (!textContent) return;
+        
+        try {
+            const response = await state.engine.chat.completions.create({
+                messages: [
+                    { role: "system", content: "You are a title generator. Summarize the user's prompt into a 2-5 word title. Respond ONLY with the title, no quotes, no extra text, no internal monologue." },
+                    { role: "user", content: textContent.substring(0, 500) }
+                ],
+                temperature: 0.3,
+                max_tokens: 15
+            });
+            
+            const generatedTitle = response.choices[0]?.message?.content?.trim();
+            if (generatedTitle) {
+                // Strip quotes if the LLM adds them anyway, and remove any <think> tags if they leak
+                let cleanTitle = generatedTitle.replace(/^["']|["']$/g, "");
+                cleanTitle = cleanTitle.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+                if (cleanTitle) {
+                    chat.title = cleanTitle;
+                }
+            }
+        } catch (e) {
+            console.warn("Failed to generate AI title", e);
+        }
     }
 }
 
@@ -790,9 +834,10 @@ async function sendMessage(content) {
 
     if (fullResponse) {
         chat.messages.push({ role: "assistant", content: fullResponse });
-        autoTitle(chat);
+        await generateAI_Title(chat);
         saveState();
         renderChatList();
+        els.chatTitle.textContent = chat.title;
     }
 
     state.isGenerating = false;
