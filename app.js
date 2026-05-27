@@ -255,12 +255,12 @@ function getCurrentChat() {
     return state.chats[state.currentChatId];
 }
 
-// Auto-generate title from first user message
+// Auto-generate title from latest user message
 function autoTitle(chat) {
-    if (chat.title !== "New Chat") return;
-    const firstUserMsg = chat.messages.find((m) => m.role === "user");
-    if (firstUserMsg) {
-        chat.title = firstUserMsg.content.slice(0, 40) + (firstUserMsg.content.length > 40 ? "..." : "");
+    const userMessages = chat.messages.filter((m) => m.role === "user");
+    const latestUserMsg = userMessages[userMessages.length - 1];
+    if (latestUserMsg) {
+        chat.title = latestUserMsg.content.slice(0, 40) + (latestUserMsg.content.length > 40 ? "..." : "");
     }
 }
 
